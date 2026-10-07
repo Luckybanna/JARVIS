@@ -31,6 +31,7 @@ class ConversationManager:
         memory_manager: Optional[any] = None,
         emotion_engine: Optional[any] = None,
         tool_router: Optional[any] = None,
+        task_manager: Optional[any] = None,
         max_history_turns: int = 20,
     ):
         self.settings: Settings = get_settings()
@@ -79,6 +80,16 @@ class ConversationManager:
                 self.tool_router = ToolRouter(executor=get_tool_executor(event_bus=self.event_bus))
             except Exception:
                 self.tool_router = None
+
+        # Tasks & Reminder Subsystem
+        if task_manager is not None:
+            self.task_manager = task_manager
+        else:
+            try:
+                from app.tasks.manager import get_task_manager
+                self.task_manager = get_task_manager()
+            except Exception:
+                self.task_manager = None
 
         # Context hooks for emotion and memory engines
         self.emotion_hook = (
@@ -179,6 +190,42 @@ class ConversationManager:
                     latency_ms=tool_res.execution_time_ms,
                     error=self.last_error,
                 )
+
+        # Check Task & Reminder Scheduling
+        if self.task_manager:
+            try:
+                reminder_speech = self.task_manager.process_turn(cleaned_text)
+                if reminder_speech:
+                    self.add_message(MessageRole.ASSISTANT, reminder_speech)
+                    self.last_latency_ms = 5.0
+                    self.last_error = None
+                    self.event_bus.publish(
+                        Event(
+                            event_type=EventType.USER_INPUT_TEXT,
+                            data={"text": cleaned_text, "intent": "command", "language": "auto"},
+                            source="conversation_manager",
+                        )
+                    )
+                    self.event_bus.publish(
+                        Event(
+                            event_type=EventType.JARVIS_RESPONSE_COMPLETE,
+                            data={
+                                "text": reminder_speech,
+                                "model": "tasks.manager",
+                                "latency_ms": 5.0,
+                                "tokens": {},
+                                "error": None,
+                            },
+                            source="conversation_manager",
+                        )
+                    )
+                    return AIResponse(
+                        content=reminder_speech,
+                        model="tasks.manager",
+                        latency_ms=5.0,
+                    )
+            except Exception as e:
+                logger.error(f"Error processing task reminder: {e}")
 
         # Plan response intent, language, and conciseness
         plan = self.response_planner.plan_response(cleaned_text)

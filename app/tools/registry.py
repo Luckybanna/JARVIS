@@ -147,7 +147,40 @@ class ToolRegistry:
             ],
         ))
 
-        # 4. Explicitly Blocked Tools (Safety Boundary Verification)
+        # 4. Tasks & Reminders
+        def _create_reminder_wrapper(title: str, in_minutes: float) -> Dict[str, Any]:
+            from app.tasks.manager import get_task_manager
+            import time
+            due = time.time() + (float(in_minutes) * 60.0)
+            mgr = get_task_manager()
+            item = mgr.create_reminder(title=title, due_timestamp=due)
+            return item.to_dict()
+
+        def _list_reminders_wrapper() -> List[Dict[str, Any]]:
+            from app.tasks.manager import get_task_manager
+            mgr = get_task_manager()
+            return [i.to_dict() for i in mgr.list_reminders()]
+
+        self.register(ToolDefinition(
+            name="create_reminder",
+            description="Create a scheduled reminder for a specific task.",
+            tier=ToolTier.SAFE,
+            handler=_create_reminder_wrapper,
+            parameters=[
+                ToolParameter("title", "string", "Reminder title or note", required=True),
+                ToolParameter("in_minutes", "number", "Minutes from now when reminder should trigger", required=True),
+            ],
+        ))
+
+        self.register(ToolDefinition(
+            name="list_reminders",
+            description="List all active pending scheduled reminders.",
+            tier=ToolTier.SAFE,
+            handler=_list_reminders_wrapper,
+            parameters=[],
+        ))
+
+        # 5. Explicitly Blocked Tools (Safety Boundary Verification)
         self.register(ToolDefinition(
             name="format_drive",
             description="Format or wipe a local storage drive (Prohibited).",
