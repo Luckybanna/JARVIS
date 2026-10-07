@@ -14,31 +14,10 @@ from typing import Optional
 
 from app.core.config import DATA_DIR, Settings, get_settings
 from app.core.events import Event, EventBus, EventType, get_event_bus
+from app.core.language import detect_language_hint, HINGLISH_KEYWORDS
 from app.core.logger import get_logger
 
 logger = get_logger("voice.tts")
-
-# Common Romanized Hindi words for Hinglish detection
-HINGLISH_KEYWORDS = {
-    "aap", "aapko", "aapka", "aapki", "kaise", "kya", "kyun", "kab", "kaha",
-    "hai", "hain", "karo", "karna", "rahe", "rahi", "kaam", "nahi", "accha",
-    "theek", "shukriya", "namaste", "dhanyawad", "kal", "aaj", "jana", "mera", "meri"
-}
-
-
-def detect_language_hint(text: str) -> str:
-    """Detects whether text is Hindi/Hinglish or English."""
-    # Check Devanagari script
-    if re.search(r"[\u0900-\u097F]", text):
-        return "hi"
-
-    # Check Romanized Hinglish tokens
-    words = re.findall(r"\b[a-zA-Z]+\b", text.lower())
-    hinglish_matches = sum(1 for w in words if w in HINGLISH_KEYWORDS)
-    if len(words) > 0 and (hinglish_matches / len(words)) >= 0.15:
-        return "hi"
-
-    return "en"
 
 
 class TTSProvider(ABC):

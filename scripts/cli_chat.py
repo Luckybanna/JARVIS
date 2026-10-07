@@ -42,7 +42,10 @@ def main():
 
     # Listen to event bus for telemetry display
     def on_thinking(evt: Event):
-        print(f"\n[JARVIS is thinking... ({evt.data.get('provider')})]")
+        provider = evt.data.get("provider", "unknown")
+        intent = evt.data.get("intent", "query")
+        lang = evt.data.get("language", "en")
+        print(f"\n[JARVIS is thinking... ({provider} | Intent: {intent} | Lang: {lang})]")
 
     bus.subscribe(EventType.JARVIS_THINKING_START, on_thinking)
 
