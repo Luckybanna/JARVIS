@@ -28,6 +28,7 @@ class ConversationManager:
         persona: Optional[JARVISPersona] = None,
         response_planner: Optional[ResponsePlanner] = None,
         prompt_builder: Optional[PromptBuilder] = None,
+        memory_manager: Optional[any] = None,
         max_history_turns: int = 20,
     ):
         self.settings: Settings = get_settings()
@@ -46,9 +47,21 @@ class ConversationManager:
         self.max_history_turns: int = max_history_turns
         self.history: List[ChatMessage] = []
 
-        # Optional context hooks for emotion and memory engines
+        # Memory Subsystem
+        if memory_manager is not None:
+            self.memory_manager = memory_manager
+        else:
+            try:
+                from app.memory.manager import get_memory_manager
+                self.memory_manager = get_memory_manager()
+            except Exception:
+                self.memory_manager = None
+
+        # Context hooks for emotion and memory engines
         self.emotion_hook = None
-        self.memory_hook = None
+        self.memory_hook = (
+            self.memory_manager.retrieve_context_for_prompt if self.memory_manager else None
+        )
 
         # Telemetry
         self.last_latency_ms: float = 0.0
@@ -92,6 +105,13 @@ class ConversationManager:
 
         # Record user message in history
         self.add_message(MessageRole.USER, cleaned_text)
+
+        # Extract and persist durable user memory if present
+        if self.memory_manager:
+            try:
+                self.memory_manager.process_turn(cleaned_text)
+            except Exception as e:
+                logger.error(f"Error processing memory extraction: {e}")
 
         # Plan response intent, language, and conciseness
         plan = self.response_planner.plan_response(cleaned_text)

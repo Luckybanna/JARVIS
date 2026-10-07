@@ -37,6 +37,9 @@ def main():
     print("  /provider <gemini|openai|local>  - Switch active provider")
     print("  /clear                           - Clear conversation history")
     print("  /health                          - Health check active provider")
+    print("  /memories                        - View all stored long-term memories")
+    print("  /remember <text>                 - Manually store a memory fact")
+    print("  /forget                          - Wipe all local memories (privacy)")
     print("  /exit                            - Quit CLI")
     print("=" * 60)
 
@@ -70,6 +73,32 @@ def main():
                 healthy, status_str = manager.provider.health_check()
                 status_icon = "[OK]" if healthy else "[FAIL]"
                 print(f"{status_icon} Provider '{manager.provider.provider_name}': {status_str}")
+                continue
+
+            if user_input.lower() == "/memories":
+                if manager.memory_manager:
+                    mems = manager.memory_manager.get_all_memories()
+                    if not mems:
+                        print("[No long-term memories stored yet]")
+                    else:
+                        print(f"\n[Stored Long-Term Memories ({len(mems)})]:")
+                        for m in mems:
+                            print(f"  #{m.id} [{m.category.upper()}] (Importance: {m.importance}) - {m.content}")
+                else:
+                    print("[Memory manager not active]")
+                continue
+
+            if user_input.lower() == "/forget":
+                if manager.memory_manager:
+                    count = manager.memory_manager.clear_all_memories()
+                    print(f"[Privacy Wipe: {count} memories deleted from database]")
+                continue
+
+            if user_input.startswith("/remember"):
+                text_to_save = user_input[len("/remember"):].strip()
+                if text_to_save and manager.memory_manager:
+                    saved = manager.memory_manager.db.add_memory(content=text_to_save, category="user_fact", importance=5)
+                    print(f"[Memory #{saved.id} stored: '{saved.content}']")
                 continue
 
             if user_input.startswith("/provider"):
