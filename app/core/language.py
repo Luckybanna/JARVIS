@@ -8,7 +8,8 @@ import re
 HINGLISH_KEYWORDS = {
     "aap", "aapko", "aapka", "aapki", "kaise", "kya", "kyun", "kab", "kaha",
     "hai", "hain", "karo", "karna", "rahe", "rahi", "kaam", "nahi", "accha",
-    "theek", "shukriya", "namaste", "dhanyawad", "kal", "aaj", "jana", "mera", "meri"
+    "theek", "shukriya", "namaste", "dhanyawad", "kal", "aaj", "jana", "mera", "meri",
+    "batao", "bataiye", "bata", "kholo", "chalao", "band", "dhoondo", "bolo", "suno", "haan", "mat",
 }
 
 

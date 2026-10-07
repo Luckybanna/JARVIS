@@ -30,6 +30,7 @@ class ConversationManager:
         prompt_builder: Optional[PromptBuilder] = None,
         memory_manager: Optional[any] = None,
         emotion_engine: Optional[any] = None,
+        tool_router: Optional[any] = None,
         max_history_turns: int = 20,
     ):
         self.settings: Settings = get_settings()
@@ -67,6 +68,17 @@ class ConversationManager:
                 self.emotion_engine = get_emotion_engine()
             except Exception:
                 self.emotion_engine = None
+
+        # Tools Subsystem
+        if tool_router is not None:
+            self.tool_router = tool_router
+        else:
+            try:
+                from app.tools.executor import get_tool_executor
+                from app.tools.router import ToolRouter
+                self.tool_router = ToolRouter(executor=get_tool_executor(event_bus=self.event_bus))
+            except Exception:
+                self.tool_router = None
 
         # Context hooks for emotion and memory engines
         self.emotion_hook = (
@@ -133,9 +145,45 @@ class ConversationManager:
             except Exception as e:
                 logger.error(f"Error processing emotion: {e}")
 
+        # Check PC Tool Routing
+        if self.tool_router:
+            tool_match = self.tool_router.route_and_execute(cleaned_text)
+            if tool_match is not None:
+                tool_res, speech = tool_match
+                self.add_message(MessageRole.ASSISTANT, speech)
+                self.last_latency_ms = tool_res.execution_time_ms
+                self.last_error = None if (tool_res.success or tool_res.requires_confirmation) else tool_res.message
+                self.event_bus.publish(
+                    Event(
+                        event_type=EventType.USER_INPUT_TEXT,
+                        data={"text": cleaned_text, "intent": "command", "language": "auto"},
+                        source="conversation_manager",
+                    )
+                )
+                self.event_bus.publish(
+                    Event(
+                        event_type=EventType.JARVIS_RESPONSE_COMPLETE,
+                        data={
+                            "text": speech,
+                            "model": f"tools.{tool_res.tool_name}",
+                            "latency_ms": tool_res.execution_time_ms,
+                            "tokens": {},
+                            "error": self.last_error,
+                        },
+                        source="conversation_manager",
+                    )
+                )
+                return AIResponse(
+                    content=speech,
+                    model=f"tools.{tool_res.tool_name}",
+                    latency_ms=tool_res.execution_time_ms,
+                    error=self.last_error,
+                )
+
         # Plan response intent, language, and conciseness
         plan = self.response_planner.plan_response(cleaned_text)
         self.last_planned_context = plan
+
 
         # Assemble turn system prompt
         emotional_ctx = self.emotion_hook() if callable(self.emotion_hook) else None

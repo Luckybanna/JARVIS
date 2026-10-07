@@ -5,8 +5,14 @@ counter-rotating HUD rings, glowing core, and audio reactivity.
 """
 
 import math
+from pathlib import Path
 import sys
 import time
+
+# Ensure root directory is on sys.path
+root_dir = str(Path(__file__).resolve().parent.parent)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
 # Ensure UTF-8 output on Windows console
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
