@@ -20,6 +20,27 @@ from app.core.logger import get_logger
 logger = get_logger("voice.tts")
 
 
+def clean_text_for_tts(text: str) -> str:
+    """Strips markdown syntax, links, and excessive code/symbols for natural speech synthesis."""
+    if not text:
+        return ""
+    # Remove code blocks
+    cleaned = re.sub(r"```[\s\S]*?```", " [code snippet] ", text)
+    # Remove inline code
+    cleaned = re.sub(r"`([^`]+)`", r"\1", cleaned)
+    # Replace markdown links [text](url) -> text
+    cleaned = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", cleaned)
+    # Remove URLs
+    cleaned = re.sub(r"https?://\S+|www\.\S+", "", cleaned)
+    # Remove bold, italics, strikethrough, headers
+    cleaned = re.sub(r"[*_~#>]", "", cleaned)
+    # Remove bullet markers at line starts
+    cleaned = re.sub(r"^\s*-\s+", "", cleaned, flags=re.MULTILINE)
+    # Collapse multiple whitespaces / newlines
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
 class TTSProvider(ABC):
     """Abstract interface for text-to-speech providers."""
 
@@ -113,7 +134,7 @@ class SAPIProvider(TTSProvider):
         if not self._voice_engine:
             return False
 
-        clean_text = text.strip()
+        clean_text = clean_text_for_tts(text)
         if not clean_text:
             return True
 
@@ -235,7 +256,7 @@ class EdgeTTSProvider(TTSProvider):
         rate: Optional[str] = None,
         interrupt_flag: Optional[threading.Event] = None,
     ) -> bool:
-        clean_text = text.strip()
+        clean_text = clean_text_for_tts(text)
         if not clean_text:
             return True
 

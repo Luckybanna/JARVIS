@@ -115,7 +115,12 @@ class VoiceManager:
         self._is_active = True
         return self.audio_capture.start()
 
+    def start_listening_async(self) -> bool:
+        """Starts continuous microphone listening asynchronously."""
+        return self.start_listening()
+
     def stop_listening(self) -> None:
+
         """Stops microphone listening and halts any ongoing speech."""
         self._is_active = False
         self.audio_capture.stop()
@@ -132,3 +137,31 @@ class VoiceManager:
     @property
     def is_speaking(self) -> bool:
         return self.tts.is_speaking
+
+
+_voice_manager_instance: Optional[VoiceManager] = None
+_voice_manager_lock = threading.Lock()
+
+
+def get_voice_manager(
+    conversation_manager: Optional[ConversationManager] = None,
+    audio_capture: Optional[AudioCapture] = None,
+    stt_provider: Optional[STTProvider] = None,
+    tts_provider: Optional[TTSProvider] = None,
+    event_bus: Optional[EventBus] = None,
+    settings: Optional[Settings] = None,
+) -> VoiceManager:
+    """Singleton getter for VoiceManager."""
+    global _voice_manager_instance
+    with _voice_manager_lock:
+        if _voice_manager_instance is None:
+            _voice_manager_instance = VoiceManager(
+                conversation_manager=conversation_manager,
+                audio_capture=audio_capture,
+                stt_provider=stt_provider,
+                tts_provider=tts_provider,
+                event_bus=event_bus,
+                settings=settings,
+            )
+        return _voice_manager_instance
+

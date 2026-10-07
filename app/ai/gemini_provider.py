@@ -3,6 +3,12 @@ Google Gemini AI Provider for JARVIS.
 Supports Gemini 2.5 Flash, 1.5 Flash, and other Gemini models.
 """
 
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:
+    pass
+
 import time
 from typing import Iterator, List, Optional
 
@@ -18,7 +24,7 @@ class GeminiProvider(AIProvider):
     def __init__(
         self,
         api_key: str,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3.8-flash",
         timeout: float = 30.0,
     ):
         super().__init__(model_name=model_name, timeout=timeout)
@@ -35,10 +41,15 @@ class GeminiProvider(AIProvider):
             logger.warning("GeminiProvider initialized without API key")
             return
         try:
+            try:
+                import truststore
+                truststore.inject_into_ssl()
+            except Exception:
+                pass
             import google.generativeai as genai
-            genai.configure(api_key=self.api_key)
+            genai.configure(api_key=self.api_key, transport="rest")
             self._client = genai
-            logger.info(f"Gemini client initialized with model '{self.model_name}'")
+            logger.info(f"Gemini client initialized with model '{self.model_name}' (transport=rest)")
         except Exception as e:
             logger.error(f"Failed to configure Gemini client: {e}")
             self._client = None

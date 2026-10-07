@@ -57,7 +57,15 @@ class JarvisMainWindow(QMainWindow):
         self.settings = get_settings()
         self.bus = event_bus or get_event_bus()
         self.conversation_manager = conversation_manager or ConversationManager(event_bus=self.bus)
-        self.voice_manager = voice_manager
+        if voice_manager is not None:
+            self.voice_manager = voice_manager
+        else:
+            try:
+                from app.voice.voice_manager import get_voice_manager
+                self.voice_manager = get_voice_manager(event_bus=self.bus, conversation_manager=self.conversation_manager)
+            except Exception as e:
+                logger.warning(f"Voice manager fallback failed: {e}")
+                self.voice_manager = None
         self.avatar_controller = get_avatar_controller(event_bus=self.bus)
 
         self.setWindowTitle("J.A.R.V.I.S. - Advanced Artificial Intelligence")
@@ -112,10 +120,18 @@ class JarvisMainWindow(QMainWindow):
         hud_layout.addWidget(self.chat_feed, stretch=1)
 
         # Add initial welcome greeting
+        welcome_text = "Systems initialized. All diagnostics reporting nominal, Sir. How may I be of assistance today?"
         self.chat_feed.add_jarvis_message(
-            "Systems initialized. All diagnostics reporting nominal, Sir. How may I be of assistance today?",
+            welcome_text,
             model_tag=self.settings.ai_provider.upper(),
         )
+        if self.voice_manager:
+            threading.Thread(
+                target=lambda: self.voice_manager.speak_manual(welcome_text),
+                daemon=True,
+                name="WelcomeSpeechWorker",
+            ).start()
+
 
         # 4. Quick Action Shortcut Bar
         shortcuts_layout = QHBoxLayout()
@@ -262,9 +278,18 @@ class JarvisMainWindow(QMainWindow):
                 model_tag = response.model or self.settings.ai_provider.upper()
                 self.jarvis_response_signal.emit(response.content, model_tag)
                 self.status_update_signal.emit(f"Latency: {response.latency_ms:.0f} ms")
+
+                # Voice output: Speak assistant response aloud
+                if self.voice_manager and response.content:
+                    if not response.content.startswith("[Error"):
+                        self.voice_manager.speak_manual(response.content)
+                    else:
+                        self.voice_manager.speak_manual("Sir, I encountered an issue contacting the AI model. Please check your settings.")
             except Exception as e:
                 logger.error(f"Error handling user turn: {e}", exc_info=True)
                 self.jarvis_response_signal.emit(f"I encountered an error processing your request: {e}", "ERROR")
+                if self.voice_manager:
+                    self.voice_manager.speak_manual("I encountered an error processing your request, sir.")
 
         t = threading.Thread(target=_worker, daemon=True, name="JarvisTurnWorker")
         t.start()
