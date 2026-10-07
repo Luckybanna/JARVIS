@@ -1,0 +1,47 @@
+{
+  "assistant": {
+    "name": "JARVIS",
+    "primary_language": "hinglish",
+    "supported_languages": ["en", "hi", "hinglish"],
+    "response_style": "concise_witty"
+  },
+  "ai": {
+    "default_provider": "gemini",
+    "timeout_seconds": 30.0,
+    "max_retries": 2,
+    "temperature": 0.7,
+    "max_tokens": 1024
+  },
+  "voice": {
+    "tts_provider": "edge_tts",
+    "edge_tts_voice_hindi": "hi-IN-MadhurNeural",
+    "edge_tts_voice_english": "en-US-GuyNeural",
+    "sapi_fallback_enabled": true,
+    "speech_rate": "+0%",
+    "speech_volume": "+0%",
+    "mic_energy_threshold": 300,
+    "mic_silence_timeout_seconds": 1.5
+  },
+  "proactive": {
+    "enabled": true,
+    "minimum_proactive_interval_minutes": 45,
+    "maximum_proactive_messages_per_hour": 2,
+    "continuous_work_break_suggestion_minutes": 90,
+    "quiet_hours_enabled": true,
+    "quiet_hours_start": "23:00",
+    "quiet_hours_end": "07:00",
+    "do_not_disturb": false,
+    "meeting_mode": false
+  },
+  "tools": {
+    "confirm_dangerous_actions": true,
+    "allowed_applications": [
+      "notepad.exe",
+      "calc.exe",
+      "explorer.exe",
+      "chrome.exe",
+      "msedge.exe",
+      "code.cmd"
+    ]
+  }
+}
