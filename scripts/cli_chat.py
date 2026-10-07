@@ -40,19 +40,26 @@ def main():
     print("  /memories                        - View all stored long-term memories")
     print("  /remember <text>                 - Manually store a memory fact")
     print("  /forget                          - Wipe all local memories (privacy)")
+    print("  /emotion                         - View simulated emotional state vector")
     print("  /exit                            - Quit CLI")
     print("=" * 60)
+
+    manager = ConversationManager()
 
     # Listen to event bus for telemetry display
     def on_thinking(evt: Event):
         provider = evt.data.get("provider", "unknown")
         intent = evt.data.get("intent", "query")
         lang = evt.data.get("language", "en")
-        print(f"\n[JARVIS is thinking... ({provider} | Intent: {intent} | Lang: {lang})]")
+        user_emo = "neutral"
+        dom = "calm"
+        if manager.emotion_engine:
+            ctx = manager.emotion_engine.get_context_for_prompt()
+            user_emo = ctx.get("user_emotion", "neutral")
+            dom = ctx.get("dominant_emotion", "calm")
+        print(f"\n[JARVIS is thinking... ({provider} | Intent: {intent} | Lang: {lang} | User: {user_emo} | Posture: {dom})]")
 
     bus.subscribe(EventType.JARVIS_THINKING_START, on_thinking)
-
-    manager = ConversationManager()
 
     while True:
         try:
@@ -99,6 +106,18 @@ def main():
                 if text_to_save and manager.memory_manager:
                     saved = manager.memory_manager.db.add_memory(content=text_to_save, category="user_fact", importance=5)
                     print(f"[Memory #{saved.id} stored: '{saved.content}']")
+                continue
+
+            if user_input.lower() == "/emotion":
+                if manager.emotion_engine:
+                    state = manager.emotion_engine.state
+                    det = manager.emotion_engine.last_detected_user_emotion
+                    det_str = f"{det.emotion.value} (Confidence: {det.confidence:.2f})" if det else "None"
+                    print("\n[JARVIS Simulated Emotional State]:")
+                    for k, v in state.to_dict().items():
+                        print(f"  {k.capitalize():<12}: {v}/100")
+                    print(f"  Dominant Posture: {state.dominant_emotion()}")
+                    print(f"  Last User Emotion: {det_str}")
                 continue
 
             if user_input.startswith("/provider"):

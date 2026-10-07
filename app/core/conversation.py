@@ -29,6 +29,7 @@ class ConversationManager:
         response_planner: Optional[ResponsePlanner] = None,
         prompt_builder: Optional[PromptBuilder] = None,
         memory_manager: Optional[any] = None,
+        emotion_engine: Optional[any] = None,
         max_history_turns: int = 20,
     ):
         self.settings: Settings = get_settings()
@@ -57,8 +58,20 @@ class ConversationManager:
             except Exception:
                 self.memory_manager = None
 
+        # Emotion Subsystem
+        if emotion_engine is not None:
+            self.emotion_engine = emotion_engine
+        else:
+            try:
+                from app.emotion.engine import get_emotion_engine
+                self.emotion_engine = get_emotion_engine()
+            except Exception:
+                self.emotion_engine = None
+
         # Context hooks for emotion and memory engines
-        self.emotion_hook = None
+        self.emotion_hook = (
+            self.emotion_engine.get_context_for_prompt if self.emotion_engine else None
+        )
         self.memory_hook = (
             self.memory_manager.retrieve_context_for_prompt if self.memory_manager else None
         )
@@ -112,6 +125,13 @@ class ConversationManager:
                 self.memory_manager.process_turn(cleaned_text)
             except Exception as e:
                 logger.error(f"Error processing memory extraction: {e}")
+
+        # Process emotional state shift from user turn
+        if self.emotion_engine:
+            try:
+                self.emotion_engine.process_user_turn(cleaned_text)
+            except Exception as e:
+                logger.error(f"Error processing emotion: {e}")
 
         # Plan response intent, language, and conciseness
         plan = self.response_planner.plan_response(cleaned_text)
