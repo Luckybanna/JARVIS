@@ -1,0 +1,173 @@
+"""
+Proactive Conversation Engine for JARVIS.
+Decides when JARVIS should autonomously initiate conversation using ShouldJarvisSpeakNow().
+"""
+
+import threading
+import time
+from typing import List, Optional
+
+from app.core.config import Settings, get_settings
+from app.core.events import Event, EventBus, EventType, get_event_bus
+from app.core.logger import get_logger
+from app.proactive.rules import ProactiveDecision, ProactiveRulePolicy
+from app.proactive.triggers import (
+    ProactiveTrigger,
+    TaskFollowupTracker,
+    TriggerType,
+    WorkActivityTracker,
+)
+
+logger = get_logger("proactive.engine")
+
+
+class ProactiveEngine:
+    """Evaluator and manager for autonomous JARVIS conversational initiations."""
+
+    def __init__(
+        self,
+        rule_policy: Optional[ProactiveRulePolicy] = None,
+        activity_tracker: Optional[WorkActivityTracker] = None,
+        followup_tracker: Optional[TaskFollowupTracker] = None,
+        event_bus: Optional[EventBus] = None,
+        settings: Optional[Settings] = None,
+    ):
+        self.settings: Settings = settings or get_settings()
+        self.event_bus: EventBus = event_bus or get_event_bus()
+        self.policy: ProactiveRulePolicy = rule_policy or ProactiveRulePolicy()
+        self.activity_tracker: WorkActivityTracker = activity_tracker or WorkActivityTracker()
+        self.followup_tracker: TaskFollowupTracker = followup_tracker or TaskFollowupTracker()
+
+        self._lock = threading.RLock()
+        self.proactive_history: List[float] = []
+        self.last_decision: Optional[ProactiveDecision] = None
+        self.is_user_speaking: bool = False
+
+        # Background monitor thread
+        self._monitor_thread: Optional[threading.Thread] = None
+        self._running = False
+
+        # Listen for audio/speech events to update user speaking status
+        self.event_bus.subscribe(EventType.SPEECH_DETECTED, self._on_speech_detected)
+        self.event_bus.subscribe(EventType.MIC_LISTENING_STOP, self._on_mic_stopped)
+        self.event_bus.subscribe(EventType.USER_INPUT_TEXT, self._on_user_interacted)
+
+    def _on_speech_detected(self, event: Event) -> None:
+        self.is_user_speaking = True
+        self.activity_tracker.record_activity()
+
+    def _on_mic_stopped(self, event: Event) -> None:
+        self.is_user_speaking = False
+
+    def _on_user_interacted(self, event: Event) -> None:
+        self.activity_tracker.record_activity()
+
+    def should_jarvis_speak_now(
+        self,
+        candidate_trigger: Optional[ProactiveTrigger] = None,
+        current_time: Optional[float] = None,
+    ) -> ProactiveDecision:
+        """
+        Core decision function ShouldJarvisSpeakNow().
+        Evaluates triggers, anti-annoyance filters, rate limits, and quiet hours.
+        """
+        now = current_time or time.time()
+
+        with self._lock:
+            # 1. Determine trigger
+            trigger = candidate_trigger
+            if trigger is None:
+                # Check work break suggestion
+                trigger = self.activity_tracker.check_break_suggestion_needed(current_time=now)
+
+            if trigger is None:
+                # If still no trigger, check if any follow-up is relevant
+                decision = ProactiveDecision(
+                    should_speak=False,
+                    reason="DO NOT SPEAK: No active trigger or meaningful reason to speak",
+                    trigger_type=None,
+                    proposed_message=None,
+                    timestamp=now,
+                )
+                self.last_decision = decision
+                return decision
+
+            # 2. Evaluate Anti-Annoyance Policies
+            allowed, policy_reason = self.policy.evaluate_interruption_policy(
+                settings=self.settings,
+                is_user_speaking=self.is_user_speaking,
+                proactive_history=self.proactive_history,
+                current_time=now,
+            )
+
+            if not allowed:
+                decision = ProactiveDecision(
+                    should_speak=False,
+                    reason=f"DO NOT SPEAK: {policy_reason}",
+                    trigger_type=trigger.trigger_type.value,
+                    proposed_message=trigger.message,
+                    timestamp=now,
+                )
+                self.last_decision = decision
+                self.event_bus.publish(
+                    Event(
+                        event_type=EventType.PROACTIVE_TRIGGER_EVALUATED,
+                        data=decision.to_dict(),
+                        source="proactive_engine",
+                    )
+                )
+                logger.info(f"Proactive decision: {decision.reason}")
+                return decision
+
+            # 3. Decision Allowed
+            decision = ProactiveDecision(
+                should_speak=True,
+                reason=f"ALLOWED: {trigger.trigger_type.value} passed all filters",
+                trigger_type=trigger.trigger_type.value,
+                proposed_message=trigger.message,
+                timestamp=now,
+            )
+            self.last_decision = decision
+
+            # Publish event
+            self.event_bus.publish(
+                Event(
+                    event_type=EventType.PROACTIVE_TRIGGER_EVALUATED,
+                    data=decision.to_dict(),
+                    source="proactive_engine",
+                )
+            )
+            self.event_bus.publish(
+                Event(
+                    event_type=EventType.PROACTIVE_MESSAGE_PROPOSED,
+                    data={"message": trigger.message, "trigger": trigger.trigger_type.value},
+                    source="proactive_engine",
+                )
+            )
+
+            logger.info(f"Proactive message APPROVED: '{trigger.message}'")
+            return decision
+
+    def record_proactive_speech(self, timestamp: Optional[float] = None) -> None:
+        """Records that a proactive message was delivered aloud, updating cooldown timers."""
+        with self._lock:
+            ts = timestamp or time.time()
+            self.proactive_history.append(ts)
+            # Retain only last 50 entries
+            if len(self.proactive_history) > 50:
+                self.proactive_history = self.proactive_history[-50:]
+
+    def get_last_decision(self) -> Optional[ProactiveDecision]:
+        with self._lock:
+            return self.last_decision
+
+
+_engine_instance: Optional[ProactiveEngine] = None
+
+
+def get_proactive_engine() -> ProactiveEngine:
+    """Singleton getter for the global ProactiveEngine."""
+    global _engine_instance
+    if _engine_instance is None:
+        _engine_instance = ProactiveEngine()
+    return _engine_instance

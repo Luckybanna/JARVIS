@@ -41,6 +41,9 @@ def main():
     print("  /remember <text>                 - Manually store a memory fact")
     print("  /forget                          - Wipe all local memories (privacy)")
     print("  /emotion                         - View simulated emotional state vector")
+    print("  /proactive                       - Evaluate proactive ShouldJarvisSpeakNow() decision")
+    print("  /dnd                             - Toggle Do Not Disturb mode")
+    print("  /meeting                         - Toggle Meeting Mode")
     print("  /exit                            - Quit CLI")
     print("=" * 60)
 
@@ -118,6 +121,30 @@ def main():
                         print(f"  {k.capitalize():<12}: {v}/100")
                     print(f"  Dominant Posture: {state.dominant_emotion()}")
                     print(f"  Last User Emotion: {det_str}")
+                continue
+
+            if user_input.lower() == "/dnd":
+                settings.do_not_disturb = not settings.do_not_disturb
+                status_str = "ENABLED" if settings.do_not_disturb else "DISABLED"
+                print(f"[Do Not Disturb: {status_str}]")
+                continue
+
+            if user_input.lower() == "/meeting":
+                settings.meeting_mode = not settings.meeting_mode
+                status_str = "ENABLED" if settings.meeting_mode else "DISABLED"
+                print(f"[Meeting Mode: {status_str}]")
+                continue
+
+            if user_input.lower() == "/proactive":
+                from app.proactive.engine import get_proactive_engine
+                p_engine = get_proactive_engine()
+                decision = p_engine.should_jarvis_speak_now()
+                dec_color = "[ALLOWED]" if decision.should_speak else "[DO NOT SPEAK]"
+                print(f"\n{dec_color} Decision:")
+                print(f"  Should Speak: {decision.should_speak}")
+                print(f"  Reason:       {decision.reason}")
+                if decision.proposed_message:
+                    print(f"  Proposed Msg: {decision.proposed_message}")
                 continue
 
             if user_input.startswith("/provider"):
