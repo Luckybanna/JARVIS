@@ -120,7 +120,10 @@ class JarvisMainWindow(QMainWindow):
         hud_layout.addWidget(self.chat_feed, stretch=1)
 
         # Add initial welcome greeting
-        welcome_text = "Systems initialized. All diagnostics reporting nominal, Sir. How may I be of assistance today?"
+        from datetime import datetime as _dt
+        _h = _dt.now().hour
+        _salutation = 'Good morning Sir!' if _h < 12 else ('Good afternoon Sir!' if _h < 17 else 'Good evening Sir!')
+        welcome_text = f'{_salutation} Aaj kya plan hai? Main aapki poori madad ke liye taiyaar hoon.'
         self.chat_feed.add_jarvis_message(
             welcome_text,
             model_tag=self.settings.ai_provider.upper(),
