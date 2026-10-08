@@ -87,11 +87,13 @@ class Settings:
         # Voice Settings
         v_cfg = self._raw_config.get("voice", {})
         self.tts_provider: str = os.getenv("TTS_PROVIDER", v_cfg.get("tts_provider", "edge_tts"))
-        self.edge_tts_voice_hindi: str = os.getenv(
-            "EDGE_TTS_VOICE_HINDI", v_cfg.get("edge_tts_voice_hindi", "hi-IN-SwaraNeural")
+        raw_h = os.getenv("EDGE_TTS_VOICE_HINDI", "").strip()
+        self.edge_tts_voice_hindi: str = (
+            raw_h if raw_h and raw_h != "hi-IN-SwaraNeural" else v_cfg.get("edge_tts_voice_hindi", "en-US-AvaMultilingualNeural")
         )
-        self.edge_tts_voice_english: str = os.getenv(
-            "EDGE_TTS_VOICE_ENGLISH", v_cfg.get("edge_tts_voice_english", "hi-IN-SwaraNeural")
+        raw_e = os.getenv("EDGE_TTS_VOICE_ENGLISH", "").strip()
+        self.edge_tts_voice_english: str = (
+            raw_e if raw_e and raw_e != "hi-IN-SwaraNeural" else v_cfg.get("edge_tts_voice_english", "en-US-AvaMultilingualNeural")
         )
         self.sapi_fallback_enabled: bool = False
         self.speech_rate: str = os.getenv("SPEECH_RATE", v_cfg.get("speech_rate", "+0%"))

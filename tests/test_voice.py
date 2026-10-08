@@ -113,12 +113,15 @@ def test_language_detection_heuristic():
 
 def test_edge_tts_voice_selection():
     edge_provider = EdgeTTSProvider(
-        hindi_voice="hi-IN-MadhurNeural",
-        english_voice="en-US-GuyNeural",
+        hindi_voice="en-US-AvaMultilingualNeural",
+        english_voice="en-US-AvaMultilingualNeural",
     )
-    assert edge_provider.select_voice_for_text("नमस्ते जार्विस") == "hi-IN-MadhurNeural"
-    assert edge_provider.select_voice_for_text("Aap kaise ho") == "hi-IN-MadhurNeural"
-    assert edge_provider.select_voice_for_text("Hello Jarvis, open Chrome") == "en-US-GuyNeural"
+    assert edge_provider.select_voice_for_text("नमस्ते जार्विस") == "en-US-AvaMultilingualNeural"
+    assert edge_provider.select_voice_for_text("Aap kaise ho") == "en-US-AvaMultilingualNeural"
+    assert edge_provider.select_voice_for_text("Hello Jarvis, open Chrome") == "en-US-AvaMultilingualNeural"
+    assert edge_provider.get_locale_for_text("नमस्ते जार्विस") == "hi-IN"
+    assert edge_provider.get_locale_for_text("Aap kaise ho") == "hi-IN"
+    assert edge_provider.get_locale_for_text("Good evening, sir.") == "en-US"
 
 
 def test_mock_tts_speak_and_interruption():

@@ -185,14 +185,14 @@ class EdgeTTSProvider(TTSProvider):
 
     def __init__(
         self,
-        hindi_voice: Optional[str] = None,
-        english_voice: Optional[str] = None,
+        hindi_voice: Optional[str] = "en-US-AvaMultilingualNeural",
+        english_voice: Optional[str] = "en-US-AvaMultilingualNeural",
         event_bus: Optional[EventBus] = None,
     ):
         super().__init__(event_bus=event_bus)
         settings = get_settings()
-        self.hindi_voice = hindi_voice or settings.edge_tts_voice_hindi
-        self.english_voice = english_voice or settings.edge_tts_voice_english
+        self.hindi_voice = hindi_voice or settings.edge_tts_voice_hindi or "en-US-AvaMultilingualNeural"
+        self.english_voice = english_voice or settings.edge_tts_voice_english or "en-US-AvaMultilingualNeural"
         self.speech_rate = settings.speech_rate or "+0%"
         self.cache_dir = DATA_DIR / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -208,32 +208,71 @@ class EdgeTTSProvider(TTSProvider):
         if lang == "hi":
             return self.hindi_voice
         return self.english_voice
+
+    def get_locale_for_text(self, text: str) -> str:
+        """Returns target SSML xml:lang locale ('hi-IN' for Hindi/Hinglish, 'en-US' for English)."""
+        words = re.findall(r"\b[a-zA-Z]+\b", text.lower())
+        non_sir_words = [w for w in words if w != "sir"]
+        if non_sir_words:
+            lang = detect_language_hint(" ".join(non_sir_words))
+        else:
+            lang = detect_language_hint(text)
+        return "hi-IN" if lang == "hi" else "en-US"
+
     def synthesize_to_bytes(
         self,
         text: str,
         voice: Optional[str] = None,
         rate: Optional[str] = None,
         pitch: Optional[str] = None,
+        locale: Optional[str] = None,
     ) -> bytes:
-        """Asynchronously synthesizes speech using edge-tts and gathers MP3 bytes."""
+        """Asynchronously synthesizes speech using edge-tts with dynamic locale handling."""
         import edge_tts
+        import edge_tts.communicate
 
         selected_voice = voice or self.select_voice_for_text(text)
         selected_rate = rate or self.speech_rate or "+0%"
         selected_pitch = pitch or "+0Hz"
+        target_locale = locale or self.get_locale_for_text(text)
+
+        logger.info(
+            f"[TTS] Synthesizing speech with voice: {selected_voice} | "
+            f"Locale: {target_locale} | Rate: {selected_rate} | Pitch: {selected_pitch}"
+        )
+
+        def _custom_mkssml(tc_obj, escaped_text):
+            if isinstance(escaped_text, bytes):
+                raw_t = escaped_text.decode("utf-8")
+            else:
+                raw_t = str(escaped_text)
+            return (
+                f"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{target_locale}'>"
+                f"<voice name='{tc_obj.voice}'>"
+                f"<prosody pitch='{tc_obj.pitch}' rate='{tc_obj.rate}' volume='{tc_obj.volume}'>"
+                f"{raw_t}"
+                "</prosody>"
+                "</voice>"
+                "</speak>"
+            )
 
         async def _synthesize():
-            communicate = edge_tts.Communicate(
-                text=text,
-                voice=selected_voice,
-                rate=selected_rate,
-                pitch=selected_pitch,
-            )
-            data = bytearray()
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    data.extend(chunk["data"])
-            return bytes(data)
+            orig_mkssml = edge_tts.communicate.mkssml
+            edge_tts.communicate.mkssml = _custom_mkssml
+            try:
+                communicate = edge_tts.Communicate(
+                    text=text,
+                    voice=selected_voice,
+                    rate=selected_rate,
+                    pitch=selected_pitch,
+                )
+                data = bytearray()
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        data.extend(chunk["data"])
+                return bytes(data)
+            finally:
+                edge_tts.communicate.mkssml = orig_mkssml
 
         try:
             return asyncio.run(_synthesize())
@@ -284,19 +323,41 @@ class EdgeTTSProvider(TTSProvider):
 
         # Diverse prosody profile: synthesize in parallel using asyncio.gather for low latency
         import edge_tts
+        import edge_tts.communicate
 
         async def _synth_chunk(item):
-            communicate = edge_tts.Communicate(
-                text=item.text,
-                voice=selected_voice,
-                rate=item.rate,
-                pitch=item.pitch,
-            )
-            data = bytearray()
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    data.extend(chunk["data"])
-            return bytes(data)
+            chunk_locale = self.get_locale_for_text(item.text)
+            def _chunk_mkssml(tc_obj, escaped_text):
+                if isinstance(escaped_text, bytes):
+                    raw_t = escaped_text.decode("utf-8")
+                else:
+                    raw_t = str(escaped_text)
+                return (
+                    f"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{chunk_locale}'>"
+                    f"<voice name='{tc_obj.voice}'>"
+                    f"<prosody pitch='{tc_obj.pitch}' rate='{tc_obj.rate}' volume='{tc_obj.volume}'>"
+                    f"{raw_t}"
+                    "</prosody>"
+                    "</voice>"
+                    "</speak>"
+                )
+
+            orig_mkssml = edge_tts.communicate.mkssml
+            edge_tts.communicate.mkssml = _chunk_mkssml
+            try:
+                communicate = edge_tts.Communicate(
+                    text=item.text,
+                    voice=selected_voice,
+                    rate=item.rate,
+                    pitch=item.pitch,
+                )
+                data = bytearray()
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        data.extend(chunk["data"])
+                return bytes(data)
+            finally:
+                edge_tts.communicate.mkssml = orig_mkssml
 
         async def _synth_all():
             return await asyncio.gather(*(_synth_chunk(item) for item in plan))

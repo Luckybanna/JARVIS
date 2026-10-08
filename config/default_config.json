@@ -18,8 +18,8 @@
   },
   "voice": {
     "tts_provider": "edge_tts",
-    "edge_tts_voice_hindi": "hi-IN-SwaraNeural",
-    "edge_tts_voice_english": "hi-IN-SwaraNeural",
+    "edge_tts_voice_hindi": "en-US-AvaMultilingualNeural",
+    "edge_tts_voice_english": "en-US-AvaMultilingualNeural",
     "sapi_fallback_enabled": false,
     "speech_rate": "+0%",
     "speech_volume": "+0%",
