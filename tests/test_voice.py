@@ -193,3 +193,31 @@ def test_voice_manager_barge_in_interruption():
 
     # Barge-in handler should have called tts.stop()
     assert tts._stop_event.is_set()
+
+
+def test_conversational_prosody_and_normalization():
+    from app.voice.prosody import normalize_hinglish_speech_text, prepare_prosody_plan, classify_sentence
+
+    # 1. Normalization of abbreviations, symbols, percentages
+    raw = "Hello Sir! 🌸 RAM 90% ho gayi hai (416 MB free). PC restart karun?"
+    cleaned = normalize_hinglish_speech_text(raw)
+    assert "🌸" not in cleaned
+    assert "nabbe percent" in cleaned
+    assert "M B" in cleaned
+    assert "P C" in cleaned
+
+    # 2. Classification of sentence types
+    assert classify_sentence("Hello Sir!") == "greeting"
+    assert classify_sentence("Khana khaya aapne?") == "question"
+    assert classify_sentence("Thoda aaram kar lijiye.") == "empathy"
+    assert classify_sentence("Maine gaana chala diya.") == "confirmation"
+
+    # 3. Dynamic prosody plan
+    plan = prepare_prosody_plan("Hello Sir. Kaise hain aap? Maine gaana chala diya.")
+    assert len(plan) == 3
+    assert plan[0].sentence_type == "greeting"
+    assert plan[0].pitch == "+2Hz"
+    assert plan[1].sentence_type == "question"
+    assert plan[1].pitch == "+3Hz"
+    assert plan[2].sentence_type == "confirmation"
+    assert plan[2].pitch == "+1Hz"

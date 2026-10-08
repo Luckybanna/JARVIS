@@ -233,18 +233,21 @@ class EdgeTTSProvider(TTSProvider):
         text: str,
         voice: Optional[str] = None,
         rate: Optional[str] = None,
+        pitch: Optional[str] = None,
     ) -> bytes:
         """Asynchronously synthesizes speech using edge-tts and gathers MP3 bytes."""
         import edge_tts
 
         selected_voice = voice or self.select_voice_for_text(text)
         selected_rate = rate or self.speech_rate or "+0%"
+        selected_pitch = pitch or "+0Hz"
 
         async def _synthesize():
             communicate = edge_tts.Communicate(
                 text=text,
                 voice=selected_voice,
                 rate=selected_rate,
+                pitch=selected_pitch,
             )
             data = bytearray()
             async for chunk in communicate.stream():
@@ -258,6 +261,46 @@ class EdgeTTSProvider(TTSProvider):
             logger.error(f"EdgeTTS synthesis error: {e}")
             return b""
 
+    def synthesize_with_prosody(
+        self,
+        text: str,
+        voice: Optional[str] = None,
+    ) -> bytes:
+        """
+        Synthesizes speech using the conversational prosody plan.
+        Varies pitch and rate per sentence for lifelike human intonation.
+        """
+        from app.voice.prosody import prepare_prosody_plan
+        plan = prepare_prosody_plan(text)
+        if not plan:
+            return b""
+
+        # Single short sentence
+        if len(plan) == 1:
+            item = plan[0]
+            return self.synthesize_to_bytes(
+                item.text,
+                voice=voice,
+                rate=item.rate,
+                pitch=item.pitch,
+            )
+
+        # Multi-sentence conversational response: vary intonation dynamically
+        combined_audio = bytearray()
+        for item in plan:
+            if self._stop_event.is_set():
+                break
+            chunk_bytes = self.synthesize_to_bytes(
+                item.text,
+                voice=voice,
+                rate=item.rate,
+                pitch=item.pitch,
+            )
+            if chunk_bytes:
+                combined_audio.extend(chunk_bytes)
+
+        return bytes(combined_audio)
+
     def stop(self) -> None:
         super().stop()
         if self.sapi_fallback:
@@ -270,15 +313,15 @@ class EdgeTTSProvider(TTSProvider):
         rate: Optional[str] = None,
         interrupt_flag: Optional[threading.Event] = None,
     ) -> bool:
-        clean_text = clean_text_for_tts(text)
+        from app.voice.prosody import normalize_hinglish_speech_text
+        clean_text = normalize_hinglish_speech_text(text)
         if not clean_text:
             return True
 
         selected_voice = voice or self.select_voice_for_text(clean_text)
-        selected_rate = rate or self.speech_rate or "+12%"
-        logger.info(f"Synthesizing speech with voice: {selected_voice} (rate: {selected_rate})")
+        logger.info(f"Synthesizing natural conversational speech with voice: {selected_voice}")
 
-        audio_bytes = self.synthesize_to_bytes(clean_text, voice=selected_voice, rate=selected_rate)
+        audio_bytes = self.synthesize_with_prosody(clean_text, voice=selected_voice)
 
         # Fallback to SAPI if edge-tts fails (e.g. offline)
         if not audio_bytes:
