@@ -169,6 +169,25 @@ class ToolRouter:
         )
         return res, speech
 
+    def _fetch_youtube_video_id(self, query: str) -> Optional[str]:
+        try:
+            import requests
+            try:
+                import truststore
+                truststore.inject_into_ssl()
+            except Exception:
+                pass
+            url = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(query)}"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            resp = requests.get(url, headers=headers, timeout=4)
+            if resp.status_code == 200:
+                vids = re.findall(r'watch\?v=([a-zA-Z0-9_-]{11})', resp.text)
+                if vids:
+                    return vids[0]
+        except Exception as e:
+            logger.debug(f"Direct video id extraction skipped: {e}")
+        return None
+
     def _handle_music_playback(self, clean: str, lang: str) -> Optional[Tuple[ToolResult, str]]:
         music_patterns = [
             r"\b(?:play|chalao|bajao|lagao|sunao)\s+(?:song\s+)?(.+?)(?:\s+(?:ka\s+)?(?:song|gaana|music|track))?\b",
@@ -189,7 +208,11 @@ class ToolRouter:
 
         clean_query = re.sub(r"\b(song|gaana|music|track|on youtube|youtube par|chalao|bajao|play|lagao|please|jarvis)\b", "", query, flags=re.IGNORECASE).strip()
         search_term = clean_query if clean_query else query
-        url = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(search_term + ' song')}"
+        vid = self._fetch_youtube_video_id(search_term + ' song')
+        if vid:
+            url = f"https://www.youtube.com/watch?v={vid}"
+        else:
+            url = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(search_term + ' song')}"
         try:
             webbrowser.open(url)
         except Exception as e:
