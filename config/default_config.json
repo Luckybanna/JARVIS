@@ -2,7 +2,11 @@
   "assistant": {
     "name": "JARVIS",
     "primary_language": "hinglish",
-    "supported_languages": ["en", "hi", "hinglish"],
+    "supported_languages": [
+      "en",
+      "hi",
+      "hinglish"
+    ],
     "response_style": "concise_witty"
   },
   "ai": {
@@ -15,8 +19,8 @@
   "voice": {
     "tts_provider": "edge_tts",
     "edge_tts_voice_hindi": "hi-IN-MadhurNeural",
-    "edge_tts_voice_english": "en-US-GuyNeural",
-    "sapi_fallback_enabled": true,
+    "edge_tts_voice_english": "hi-IN-SwaraNeural",
+    "sapi_fallback_enabled": false,
     "speech_rate": "+0%",
     "speech_volume": "+0%",
     "mic_energy_threshold": 300,

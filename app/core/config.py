@@ -91,9 +91,9 @@ class Settings:
             "EDGE_TTS_VOICE_HINDI", v_cfg.get("edge_tts_voice_hindi", "hi-IN-SwaraNeural")
         )
         self.edge_tts_voice_english: str = os.getenv(
-            "EDGE_TTS_VOICE_ENGLISH", v_cfg.get("edge_tts_voice_english", "en-US-JennyNeural")
+            "EDGE_TTS_VOICE_ENGLISH", v_cfg.get("edge_tts_voice_english", "hi-IN-SwaraNeural")
         )
-        self.sapi_fallback_enabled: bool = bool(v_cfg.get("sapi_fallback_enabled", True))
+        self.sapi_fallback_enabled: bool = False
         self.speech_rate: str = os.getenv("SPEECH_RATE", v_cfg.get("speech_rate", "+12%"))
         self.speech_volume: str = os.getenv("SPEECH_VOLUME", v_cfg.get("speech_volume", "+0%"))
         self.mic_energy_threshold: int = int(v_cfg.get("mic_energy_threshold", 300))

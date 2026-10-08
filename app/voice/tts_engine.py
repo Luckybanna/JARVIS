@@ -100,7 +100,14 @@ class SAPIProvider(TTSProvider):
         try:
             import win32com.client
             self._voice_engine = win32com.client.Dispatch("SAPI.SpVoice")
-            logger.info("Windows SAPI voice initialized")
+            # Strictly select female voice (Zira/Kalpana/Heera), NEVER male voice (David)
+            for v in self._voice_engine.GetVoices():
+                desc = v.GetDescription().lower()
+                if any(kw in desc for kw in ["zira", "female", "heera", "kalpana", "harita"]):
+                    self._voice_engine.Voice = v
+                    logger.info(f"SAPI voice set to female: {v.GetDescription()}")
+                    break
+            logger.info("Windows SAPI female voice initialized")
         except Exception as e:
             logger.error(f"Failed to initialize SAPI: {e}")
             self._voice_engine = None
@@ -202,15 +209,18 @@ class EdgeTTSProvider(TTSProvider):
         self.speech_rate = settings.speech_rate or "+12%"
         self.cache_dir = DATA_DIR / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.sapi_fallback = SAPIProvider(event_bus=self.event_bus) if settings.sapi_fallback_enabled else None
+        self.sapi_fallback = None  # Strictly disabled to prevent any dual voice / male voice overlap
 
     @property
     def provider_name(self) -> str:
         return "edge_tts"
 
     def select_voice_for_text(self, text: str) -> str:
-        """Always selects natural Indian female voice (hi-IN-SwaraNeural)."""
-        return self.hindi_voice
+        """Selects appropriate neural voice based on language and script."""
+        lang = detect_language_hint(text)
+        if lang == "hi":
+            return self.hindi_voice
+        return self.english_voice
     def synthesize_to_bytes(
         self,
         text: str,
@@ -288,19 +298,19 @@ class EdgeTTSProvider(TTSProvider):
             )
         )
 
-        # Play using WMPlayer.OCX
+        # Play using Windows native Multimedia MCI (winmm.dll)
         try:
-            import win32com.client
-            wmp = win32com.client.Dispatch("WMPlayer.OCX")
-            media = wmp.newMedia(str(temp_audio_file.resolve()))
-            wmp.currentMedia = media
-            wmp.controls.play()
+            import ctypes
+            winmm = ctypes.windll.winmm
+            alias = f"tts_{int(time.time() * 1000)}"
+            winmm.mciSendStringW(f'open "{temp_audio_file.resolve()}" type mpegvideo alias {alias}', None, 0, None)
+            winmm.mciSendStringW(f'play {alias}', None, 0, None)
 
-            # Poll for playback completion or interruption
-            # playState: 3 = Playing, 1 = Stopped, 8 = MediaEnded, 10 = Ready
+            buf = ctypes.create_unicode_buffer(64)
             while True:
                 if self._stop_event.is_set() or (interrupt_flag and interrupt_flag.is_set()):
-                    wmp.controls.stop()
+                    winmm.mciSendStringW(f'stop {alias}', None, 0, None)
+                    winmm.mciSendStringW(f'close {alias}', None, 0, None)
                     logger.info("EdgeTTS playback interrupted")
                     self.event_bus.publish(
                         Event(
@@ -310,18 +320,16 @@ class EdgeTTSProvider(TTSProvider):
                     )
                     return False
 
-                state = wmp.playState
-                # Once started (state 3), if it transitions to 1 (Stopped) or 8 (MediaEnded), we are done
-                if state in (1, 8):
+                winmm.mciSendStringW(f'status {alias} mode', buf, 64, None)
+                if buf.value != "playing":
                     break
-                time.sleep(0.05)
+                time.sleep(0.04)
 
+            winmm.mciSendStringW(f'close {alias}', None, 0, None)
             return True
 
         except Exception as e:
             logger.error(f"Audio playback error: {e}")
-            if self.sapi_fallback:
-                return self.sapi_fallback.speak(clean_text, interrupt_flag=interrupt_flag)
             return False
 
         finally:
