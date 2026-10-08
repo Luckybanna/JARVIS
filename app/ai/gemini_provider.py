@@ -18,13 +18,21 @@ from app.core.logger import get_logger
 logger = get_logger("ai.gemini")
 
 
+FALLBACK_GEMINI_MODELS = [
+    "gemini-3.5-flash",
+    "gemini-3.7-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-flash-lite-latest",
+]
+
+
 class GeminiProvider(AIProvider):
-    """Integration for Google Gemini models."""
+    """Integration for Google Gemini models with automatic multi-model quota fallback."""
 
     def __init__(
         self,
         api_key: str,
-        model_name: str = "gemini-3.8-flash",
+        model_name: str = "gemini-3.5-flash",
         timeout: float = 30.0,
     ):
         super().__init__(model_name=model_name, timeout=timeout)
@@ -54,6 +62,14 @@ class GeminiProvider(AIProvider):
             logger.error(f"Failed to configure Gemini client: {e}")
             self._client = None
 
+    def _get_candidate_models(self) -> List[str]:
+        """Returns ordered list of candidate models starting with the active model."""
+        candidates = [self.model_name]
+        for m in FALLBACK_GEMINI_MODELS:
+            if m not in candidates:
+                candidates.append(m)
+        return candidates
+
     def _format_contents(self, messages: List[ChatMessage]) -> List[dict]:
         """Convert standard ChatMessage objects into Gemini's contents format."""
         contents = []
@@ -72,7 +88,7 @@ class GeminiProvider(AIProvider):
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
     ) -> AIResponse:
-        """Synchronously calls Gemini API and returns an AIResponse."""
+        """Synchronously calls Gemini API and returns an AIResponse with automatic quota fallback."""
         if not self.api_key:
             return AIResponse(
                 content="[Configuration Error: GEMINI_API_KEY is missing. Please set it in your .env file.]",
@@ -81,73 +97,103 @@ class GeminiProvider(AIProvider):
             )
 
         start_time = time.perf_counter()
-        try:
-            if not self._client:
-                self._init_client()
+        if not self._client:
+            self._init_client()
 
-            genai = self._client
-            config = genai.GenerationConfig(
-                temperature=temperature if temperature is not None else 0.7,
-                max_output_tokens=max_tokens if max_tokens is not None else 1024,
+        genai = self._client
+        config = genai.GenerationConfig(
+            temperature=temperature if temperature is not None else 0.7,
+            max_output_tokens=max_tokens if max_tokens is not None else 1024,
+        )
+
+        contents = self._format_contents(messages)
+        if not contents:
+            return AIResponse(
+                content="",
+                model=self.model_name,
+                error="No user/assistant messages provided",
             )
 
-            model = genai.GenerativeModel(
-                model_name=self.model_name,
-                system_instruction=system_prompt if system_prompt else None,
-                generation_config=config,
-            )
+        candidate_models = self._get_candidate_models()
+        last_error = None
 
-            contents = self._format_contents(messages)
-            if not contents:
-                return AIResponse(
-                    content="",
-                    model=self.model_name,
-                    error="No user/assistant messages provided",
+        for attempt_idx, candidate_model in enumerate(candidate_models):
+            try:
+                model = genai.GenerativeModel(
+                    model_name=candidate_model,
+                    system_instruction=system_prompt if system_prompt else None,
+                    generation_config=config,
                 )
 
-            # Generate content
-            response = model.generate_content(contents)
-            latency_ms = (time.perf_counter() - start_time) * 1000.0
+                response = model.generate_content(contents)
+                latency_ms = (time.perf_counter() - start_time) * 1000.0
 
-            content_text = ""
-            if response and hasattr(response, "text"):
-                try:
-                    content_text = response.text
-                except Exception:
-                    # In case of safety blocks or multiple candidates
-                    if response.candidates and response.candidates[0].content.parts:
-                        content_text = "".join(
-                            part.text for part in response.candidates[0].content.parts if hasattr(part, "text")
-                        )
+                content_text = ""
+                if response and hasattr(response, "text"):
+                    try:
+                        content_text = response.text
+                    except Exception:
+                        if response.candidates and response.candidates[0].content.parts:
+                            content_text = "".join(
+                                part.text for part in response.candidates[0].content.parts if hasattr(part, "text")
+                            )
 
-            # Extract token usage if available
-            prompt_tokens = 0
-            completion_tokens = 0
-            if hasattr(response, "usage_metadata") and response.usage_metadata:
-                prompt_tokens = getattr(response.usage_metadata, "prompt_token_count", 0)
-                completion_tokens = getattr(response.usage_metadata, "candidates_token_count", 0)
+                # Extract token usage if available
+                prompt_tokens = 0
+                completion_tokens = 0
+                if hasattr(response, "usage_metadata") and response.usage_metadata:
+                    prompt_tokens = getattr(response.usage_metadata, "prompt_token_count", 0)
+                    completion_tokens = getattr(response.usage_metadata, "candidates_token_count", 0)
 
-            return AIResponse(
-                content=content_text,
-                model=self.model_name,
-                usage=TokenUsage(
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    total_tokens=prompt_tokens + completion_tokens,
-                ),
-                latency_ms=latency_ms,
-                raw_response=response,
-            )
+                # If we switched models due to fallback, update active model
+                if candidate_model != self.model_name:
+                    logger.info(
+                        f"Switched active Gemini model from '{self.model_name}' to '{candidate_model}' due to quota limits"
+                    )
+                    self.model_name = candidate_model
 
-        except Exception as e:
-            latency_ms = (time.perf_counter() - start_time) * 1000.0
-            logger.error(f"Gemini API generation error: {e}", exc_info=True)
-            return AIResponse(
-                content=f"[Error contacting Gemini: {str(e)}]",
-                model=self.model_name,
-                latency_ms=latency_ms,
-                error=str(e),
-            )
+                return AIResponse(
+                    content=content_text,
+                    model=candidate_model,
+                    usage=TokenUsage(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=prompt_tokens + completion_tokens,
+                    ),
+                    latency_ms=latency_ms,
+                    raw_response=response,
+                )
+
+            except Exception as e:
+                err_str = str(e)
+                last_error = err_str
+                is_recoverable = (
+                    "429" in err_str
+                    or "quota" in err_str.lower()
+                    or "resourceexhausted" in err_str.lower()
+                    or "rate_limit" in err_str.lower()
+                    or "404" in err_str
+                    or "not found" in err_str.lower()
+                    or "no longer available" in err_str.lower()
+                )
+                if is_recoverable and attempt_idx < len(candidate_models) - 1:
+                    next_model = candidate_models[attempt_idx + 1]
+                    logger.warning(
+                        f"Gemini model '{candidate_model}' quota/availability error: {err_str[:120]}... "
+                        f"Automatically falling back to '{next_model}'."
+                    )
+                    continue
+                else:
+                    logger.error(f"Gemini API generation error on '{candidate_model}': {e}", exc_info=True)
+                    break
+
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        return AIResponse(
+            content=f"[Error contacting Gemini: {last_error or 'Unknown error'}]",
+            model=self.model_name,
+            latency_ms=latency_ms,
+            error=last_error,
+        )
 
     def stream(
         self,
@@ -156,37 +202,67 @@ class GeminiProvider(AIProvider):
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
     ) -> Iterator[str]:
-        """Streams response tokens from Gemini."""
+        """Streams response tokens from Gemini with automatic quota fallback."""
         if not self.api_key:
             yield "[Error: GEMINI_API_KEY is not configured]"
             return
 
-        try:
-            if not self._client:
-                self._init_client()
+        if not self._client:
+            self._init_client()
 
-            genai = self._client
-            config = genai.GenerationConfig(
-                temperature=temperature if temperature is not None else 0.7,
-                max_output_tokens=max_tokens if max_tokens is not None else 1024,
-            )
+        genai = self._client
+        config = genai.GenerationConfig(
+            temperature=temperature if temperature is not None else 0.7,
+            max_output_tokens=max_tokens if max_tokens is not None else 1024,
+        )
+        contents = self._format_contents(messages)
 
-            model = genai.GenerativeModel(
-                model_name=self.model_name,
-                system_instruction=system_prompt if system_prompt else None,
-                generation_config=config,
-            )
+        candidate_models = self._get_candidate_models()
 
-            contents = self._format_contents(messages)
-            response = model.generate_content(contents, stream=True)
+        for attempt_idx, candidate_model in enumerate(candidate_models):
+            try:
+                model = genai.GenerativeModel(
+                    model_name=candidate_model,
+                    system_instruction=system_prompt if system_prompt else None,
+                    generation_config=config,
+                )
 
-            for chunk in response:
-                if hasattr(chunk, "text") and chunk.text:
-                    yield chunk.text
+                response = model.generate_content(contents, stream=True)
+                yielded_any = False
+                for chunk in response:
+                    if hasattr(chunk, "text") and chunk.text:
+                        yield chunk.text
+                        yielded_any = True
 
-        except Exception as e:
-            logger.error(f"Gemini streaming error: {e}", exc_info=True)
-            yield f"[Streaming error: {e}]"
+                if candidate_model != self.model_name:
+                    logger.info(
+                        f"Switched active Gemini model from '{self.model_name}' to '{candidate_model}'"
+                    )
+                    self.model_name = candidate_model
+                return
+
+            except Exception as e:
+                err_str = str(e)
+                is_recoverable = (
+                    "429" in err_str
+                    or "quota" in err_str.lower()
+                    or "resourceexhausted" in err_str.lower()
+                    or "rate_limit" in err_str.lower()
+                    or "404" in err_str
+                    or "not found" in err_str.lower()
+                    or "no longer available" in err_str.lower()
+                )
+                if is_recoverable and attempt_idx < len(candidate_models) - 1:
+                    next_model = candidate_models[attempt_idx + 1]
+                    logger.warning(
+                        f"Gemini streaming model '{candidate_model}' quota error: {err_str[:120]}... "
+                        f"Falling back to '{next_model}'."
+                    )
+                    continue
+                else:
+                    logger.error(f"Gemini streaming error on '{candidate_model}': {e}", exc_info=True)
+                    yield f"[Streaming error: {e}]"
+                    return
 
     def health_check(self) -> tuple[bool, str]:
         """Validates API credentials with a minimal ping."""
