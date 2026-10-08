@@ -86,16 +86,16 @@ class Settings:
 
         # Voice Settings
         v_cfg = self._raw_config.get("voice", {})
-        self.tts_provider: str = v_cfg.get("tts_provider", "edge_tts")
-        self.edge_tts_voice_hindi: str = v_cfg.get(
-            "edge_tts_voice_hindi", "hi-IN-MadhurNeural"
+        self.tts_provider: str = os.getenv("TTS_PROVIDER", v_cfg.get("tts_provider", "edge_tts"))
+        self.edge_tts_voice_hindi: str = os.getenv(
+            "EDGE_TTS_VOICE_HINDI", v_cfg.get("edge_tts_voice_hindi", "hi-IN-SwaraNeural")
         )
-        self.edge_tts_voice_english: str = v_cfg.get(
-            "edge_tts_voice_english", "en-US-GuyNeural"
+        self.edge_tts_voice_english: str = os.getenv(
+            "EDGE_TTS_VOICE_ENGLISH", v_cfg.get("edge_tts_voice_english", "en-US-JennyNeural")
         )
         self.sapi_fallback_enabled: bool = bool(v_cfg.get("sapi_fallback_enabled", True))
-        self.speech_rate: str = v_cfg.get("speech_rate", "+0%")
-        self.speech_volume: str = v_cfg.get("speech_volume", "+0%")
+        self.speech_rate: str = os.getenv("SPEECH_RATE", v_cfg.get("speech_rate", "+12%"))
+        self.speech_volume: str = os.getenv("SPEECH_VOLUME", v_cfg.get("speech_volume", "+0%"))
         self.mic_energy_threshold: int = int(v_cfg.get("mic_energy_threshold", 300))
         self.mic_silence_timeout_seconds: float = float(
             v_cfg.get("mic_silence_timeout_seconds", 1.5)

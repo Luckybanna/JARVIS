@@ -230,6 +230,24 @@ class JarvisMainWindow(QMainWindow):
         self.bus.subscribe(EventType.TTS_SPEAKING_STOP, lambda e: self.lbl_status_voice.setText("Voice: READY"))
         self.bus.subscribe(EventType.MIC_LISTENING_START, lambda e: self._update_mic_state(True))
         self.bus.subscribe(EventType.MIC_LISTENING_STOP, lambda e: self._update_mic_state(False))
+        self.bus.subscribe(EventType.PROACTIVE_MESSAGE_PROPOSED, self._on_proactive_message)
+
+    def _on_proactive_message(self, event: Event):
+        msg = event.data.get("message", "")
+        if not msg:
+            return
+        self.jarvis_response_signal.emit(msg, "COMPANION")
+        if self.voice_manager:
+            threading.Thread(
+                target=lambda: self.voice_manager.speak_manual(msg),
+                daemon=True,
+                name="ProactiveSpeechWorker",
+            ).start()
+        try:
+            from app.proactive.engine import get_proactive_engine
+            get_proactive_engine().record_proactive_speech()
+        except Exception:
+            pass
 
     def _on_speech_detected(self, event: Event):
         rms = event.data.get("rms", 0.0)

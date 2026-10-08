@@ -64,6 +64,7 @@ def main():
 
     print("[3/6] Starting Proactive Conversation Engine...")
     proactive_eng = get_proactive_engine()
+    proactive_eng.start()
 
     voice_mgr = None
     if not args.no_voice:

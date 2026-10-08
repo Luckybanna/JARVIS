@@ -13,8 +13,10 @@ from app.core.logger import get_logger
 from app.proactive.rules import ProactiveDecision, ProactiveRulePolicy
 from app.proactive.triggers import (
     ProactiveTrigger,
+    SystemResourceMonitorTracker,
     TaskFollowupTracker,
     TriggerType,
+    WellbeingCareTracker,
     WorkActivityTracker,
 )
 
@@ -37,6 +39,8 @@ class ProactiveEngine:
         self.policy: ProactiveRulePolicy = rule_policy or ProactiveRulePolicy()
         self.activity_tracker: WorkActivityTracker = activity_tracker or WorkActivityTracker()
         self.followup_tracker: TaskFollowupTracker = followup_tracker or TaskFollowupTracker()
+        self.wellbeing_tracker: WellbeingCareTracker = WellbeingCareTracker()
+        self.resource_tracker: SystemResourceMonitorTracker = SystemResourceMonitorTracker()
 
         self._lock = threading.RLock()
         self.proactive_history: List[float] = []
@@ -156,6 +160,59 @@ class ProactiveEngine:
             # Retain only last 50 entries
             if len(self.proactive_history) > 50:
                 self.proactive_history = self.proactive_history[-50:]
+
+    def check_active_triggers(self, current_time: Optional[float] = None) -> Optional[ProactiveTrigger]:
+        """Evaluates all registered proactive monitors (system load, caring companion check-ins, break suggestions)."""
+        now = current_time or time.time()
+        # 1. System resource warning (RAM / CPU > 85%)
+        res_trigger = self.resource_tracker.check_resource_warning(current_time=now)
+        if res_trigger:
+            return res_trigger
+
+        # 2. Wellbeing & Caring Companion (meals, tea, late hours)
+        well_trigger = self.wellbeing_tracker.check_wellbeing_trigger(current_time=now)
+        if well_trigger:
+            return well_trigger
+
+        # 3. Work activity break suggestion
+        break_trigger = self.activity_tracker.check_break_suggestion_needed(current_time=now)
+        if break_trigger:
+            return break_trigger
+
+        return None
+
+    def start(self, interval_seconds: float = 30.0) -> None:
+        """Starts background periodic proactive evaluation thread."""
+        with self._lock:
+            if self._running:
+                return
+            self._running = True
+            self._monitor_thread = threading.Thread(
+                target=self._monitor_loop,
+                args=(interval_seconds,),
+                daemon=True,
+                name="ProactiveMonitorWorker",
+            )
+            self._monitor_thread.start()
+            logger.info("ProactiveEngine background monitor started")
+
+    def stop(self) -> None:
+        """Stops background monitor loop."""
+        with self._lock:
+            self._running = False
+
+    def _monitor_loop(self, interval_seconds: float) -> None:
+        """Periodic loop that evaluates autonomous triggers without blocking the main loop."""
+        while self._running:
+            try:
+                time.sleep(interval_seconds)
+                if not self._running:
+                    break
+                trigger = self.check_active_triggers()
+                if trigger:
+                    self.should_jarvis_speak_now(candidate_trigger=trigger)
+            except Exception as e:
+                logger.error(f"Error in proactive monitor loop: {e}", exc_info=True)
 
     def get_last_decision(self) -> Optional[ProactiveDecision]:
         with self._lock:

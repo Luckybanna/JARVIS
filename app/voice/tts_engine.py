@@ -199,6 +199,7 @@ class EdgeTTSProvider(TTSProvider):
         settings = get_settings()
         self.hindi_voice = hindi_voice or settings.edge_tts_voice_hindi
         self.english_voice = english_voice or settings.edge_tts_voice_english
+        self.speech_rate = settings.speech_rate or "+12%"
         self.cache_dir = DATA_DIR / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.sapi_fallback = SAPIProvider(event_bus=self.event_bus) if settings.sapi_fallback_enabled else None
@@ -224,7 +225,7 @@ class EdgeTTSProvider(TTSProvider):
         import edge_tts
 
         selected_voice = voice or self.select_voice_for_text(text)
-        selected_rate = rate or "+0%"
+        selected_rate = rate or self.speech_rate or "+12%"
 
         async def _synthesize():
             communicate = edge_tts.Communicate(
@@ -261,9 +262,10 @@ class EdgeTTSProvider(TTSProvider):
             return True
 
         selected_voice = voice or self.select_voice_for_text(clean_text)
-        logger.info(f"Synthesizing speech with voice: {selected_voice}")
+        selected_rate = rate or self.speech_rate or "+12%"
+        logger.info(f"Synthesizing speech with voice: {selected_voice} (rate: {selected_rate})")
 
-        audio_bytes = self.synthesize_to_bytes(clean_text, voice=selected_voice, rate=rate)
+        audio_bytes = self.synthesize_to_bytes(clean_text, voice=selected_voice, rate=selected_rate)
 
         # Fallback to SAPI if edge-tts fails (e.g. offline)
         if not audio_bytes:
