@@ -21,22 +21,29 @@ logger = get_logger("voice.tts")
 
 
 def clean_text_for_tts(text: str) -> str:
-    """Strips markdown syntax, links, and excessive code/symbols for natural speech synthesis."""
+    """Strips markdown syntax, emojis, numbers, and awkward punctuation for smooth, fluent speech."""
     if not text:
         return ""
-    # Remove code blocks
-    cleaned = re.sub(r"```[\s\S]*?```", " [code snippet] ", text)
-    # Remove inline code
+    # Remove code blocks and inline code
+    cleaned = re.sub(r"```[\s\S]*?```", "", text)
     cleaned = re.sub(r"`([^`]+)`", r"\1", cleaned)
     # Replace markdown links [text](url) -> text
     cleaned = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", cleaned)
     # Remove URLs
     cleaned = re.sub(r"https?://\S+|www\.\S+", "", cleaned)
-    # Remove bold, italics, strikethrough, headers
+    # Remove markdown symbols, list numbers, bullets
     cleaned = re.sub(r"[*_~#>]", "", cleaned)
-    # Remove bullet markers at line starts
-    cleaned = re.sub(r"^\s*-\s+", "", cleaned, flags=re.MULTILINE)
-    # Collapse multiple whitespaces / newlines
+    cleaned = re.sub(r"^\s*[\d\.\-\*•]+\s*", "", cleaned, flags=re.MULTILINE)
+    # Remove emojis and special symbols that cause audio gaps/stutters
+    cleaned = re.sub(r"[\U00010000-\U0010ffff]", "", cleaned)
+    cleaned = re.sub(r"[\u2600-\u27bf\u2300-\u23ff]", "", cleaned)
+    # Smooth out punctuation: replace dashes with spaces, multiple punctuation with single light pause
+    cleaned = re.sub(r"[-–—]", " ", cleaned)
+    cleaned = re.sub(r"[:;]", ",", cleaned)
+    cleaned = re.sub(r"\.{2,}", ".", cleaned)
+    cleaned = re.sub(r"[!?]+", ".", cleaned)
+    cleaned = re.sub(r"\s*,\s*", ", ", cleaned)
+    cleaned = re.sub(r"\s*\.\s*", ". ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
 
@@ -206,7 +213,7 @@ class EdgeTTSProvider(TTSProvider):
         settings = get_settings()
         self.hindi_voice = hindi_voice or settings.edge_tts_voice_hindi
         self.english_voice = english_voice or settings.edge_tts_voice_english
-        self.speech_rate = settings.speech_rate or "+12%"
+        self.speech_rate = settings.speech_rate or "+0%"
         self.cache_dir = DATA_DIR / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.sapi_fallback = None  # Strictly disabled to prevent any dual voice / male voice overlap
@@ -231,7 +238,7 @@ class EdgeTTSProvider(TTSProvider):
         import edge_tts
 
         selected_voice = voice or self.select_voice_for_text(text)
-        selected_rate = rate or self.speech_rate or "+12%"
+        selected_rate = rate or self.speech_rate or "+0%"
 
         async def _synthesize():
             communicate = edge_tts.Communicate(

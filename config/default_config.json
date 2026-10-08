@@ -18,7 +18,7 @@
   },
   "voice": {
     "tts_provider": "edge_tts",
-    "edge_tts_voice_hindi": "hi-IN-MadhurNeural",
+    "edge_tts_voice_hindi": "hi-IN-SwaraNeural",
     "edge_tts_voice_english": "hi-IN-SwaraNeural",
     "sapi_fallback_enabled": false,
     "speech_rate": "+0%",
