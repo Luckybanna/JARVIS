@@ -209,12 +209,8 @@ class EdgeTTSProvider(TTSProvider):
         return "edge_tts"
 
     def select_voice_for_text(self, text: str) -> str:
-        """Selects appropriate neural voice based on language and script."""
-        lang = detect_language_hint(text)
-        if lang == "hi":
-            return self.hindi_voice
-        return self.english_voice
-
+        """Always selects natural Indian female voice (hi-IN-SwaraNeural)."""
+        return self.hindi_voice
     def synthesize_to_bytes(
         self,
         text: str,
