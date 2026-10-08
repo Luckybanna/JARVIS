@@ -48,27 +48,27 @@ def main():
         detected = detect_language_hint(p)
         print(f"    \"{p}\" -> Detected: [{detected.upper()}]")
 
-    # 3. Test Text-to-Speech Engine
-    print("\n[3] Testing Neural Text-to-Speech (Edge-TTS + SAPI Fallback):")
+    # 3. Test Text-to-Speech Engine with Conversational Prosody
+    print("\n[3] Testing Neural Text-to-Speech with Conversational Prosody:")
     edge_tts = EdgeTTSProvider(event_bus=bus)
 
-    hindi_sample = "Namaste. Main Jarvis hoon. Aapka personal AI assistant."
-    print(f"    Synthesizing Hindi: \"{hindi_sample}\"")
+    hindi_sample = "Sir, dhyan dijiye - system ki RAM usage 86% ho gayi hai (569 MB free). PC restart karun?"
+    print(f"    Input Prompt: \"{hindi_sample}\"")
     voice_h = edge_tts.select_voice_for_text(hindi_sample)
     print(f"    Selected Voice: {voice_h}")
-    bytes_h = edge_tts.synthesize_to_bytes(hindi_sample, voice=voice_h)
-    print(f"    Generated: {len(bytes_h)} bytes of MP3 audio")
+    bytes_h = edge_tts.synthesize_with_prosody(hindi_sample, voice=voice_h)
+    print(f"    Generated: {len(bytes_h)} bytes of MP3 audio with dynamic prosody")
 
-    english_sample = "All systems are operational and ready for your commands."
+    english_sample = "All systems are operational and ready for your commands, Sir."
     print(f"\n    Synthesizing English: \"{english_sample}\"")
     voice_e = edge_tts.select_voice_for_text(english_sample)
     print(f"    Selected Voice: {voice_e}")
     bytes_e = edge_tts.synthesize_to_bytes(english_sample, voice=voice_e)
     print(f"    Generated: {len(bytes_e)} bytes of MP3 audio")
 
-    # 4. SAPI Offline Fallback Check
+    # 4. SAPI Offline Fallback Check (Disabled by default to prevent male voice leakage)
     sapi = SAPIProvider(event_bus=bus)
-    print(f"\n[4] Windows SAPI Offline Engine: {'[OK] Available' if sapi._voice_engine else '[FAIL] Unavailable'}")
+    print(f"\n[4] Windows SAPI Engine Status: {'[OK] Available (Offline Standby)' if sapi._voice_engine else '[N/A] Unavailable'}")
 
     print("\n" + "=" * 60)
     print("Voice subsystem diagnostics completed successfully.")

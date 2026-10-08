@@ -21,31 +21,11 @@ logger = get_logger("voice.tts")
 
 
 def clean_text_for_tts(text: str) -> str:
-    """Strips markdown syntax, emojis, numbers, and awkward punctuation for smooth, fluent speech."""
+    """Strips markdown syntax, emojis, and normalizes speech using the unified prosody engine."""
     if not text:
         return ""
-    # Remove code blocks and inline code
-    cleaned = re.sub(r"```[\s\S]*?```", "", text)
-    cleaned = re.sub(r"`([^`]+)`", r"\1", cleaned)
-    # Replace markdown links [text](url) -> text
-    cleaned = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", cleaned)
-    # Remove URLs
-    cleaned = re.sub(r"https?://\S+|www\.\S+", "", cleaned)
-    # Remove markdown symbols, list numbers, bullets
-    cleaned = re.sub(r"[*_~#>]", "", cleaned)
-    cleaned = re.sub(r"^\s*[\d\.\-\*•]+\s*", "", cleaned, flags=re.MULTILINE)
-    # Remove emojis and special symbols that cause audio gaps/stutters
-    cleaned = re.sub(r"[\U00010000-\U0010ffff]", "", cleaned)
-    cleaned = re.sub(r"[\u2600-\u27bf\u2300-\u23ff]", "", cleaned)
-    # Smooth out punctuation: replace dashes with spaces, multiple punctuation with single light pause
-    cleaned = re.sub(r"[-–—]", " ", cleaned)
-    cleaned = re.sub(r"[:;]", ",", cleaned)
-    cleaned = re.sub(r"\.{2,}", ".", cleaned)
-    cleaned = re.sub(r"[!?]+", ".", cleaned)
-    cleaned = re.sub(r"\s*,\s*", ", ", cleaned)
-    cleaned = re.sub(r"\s*\.\s*", ". ", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return cleaned
+    from app.voice.prosody import normalize_hinglish_speech_text
+    return normalize_hinglish_speech_text(text)
 
 
 class TTSProvider(ABC):
@@ -269,37 +249,81 @@ class EdgeTTSProvider(TTSProvider):
         """
         Synthesizes speech using the conversational prosody plan.
         Varies pitch and rate per sentence for lifelike human intonation.
+        Uses single-pass for coherent statements to maintain neural cross-sentence flow,
+        and concurrent parallel requests for diverse pitch profiles to minimize latency.
         """
         from app.voice.prosody import prepare_prosody_plan
         plan = prepare_prosody_plan(text)
         if not plan:
             return b""
 
+        selected_voice = voice or self.select_voice_for_text(text)
+
         # Single short sentence
         if len(plan) == 1:
             item = plan[0]
             return self.synthesize_to_bytes(
                 item.text,
-                voice=voice,
+                voice=selected_voice,
                 rate=item.rate,
                 pitch=item.pitch,
             )
 
-        # Multi-sentence conversational response: vary intonation dynamically
-        combined_audio = bytearray()
-        for item in plan:
-            if self._stop_event.is_set():
-                break
-            chunk_bytes = self.synthesize_to_bytes(
-                item.text,
-                voice=voice,
+        # Check if all sentences share identical pitch and rate
+        distinct_pitches = {item.pitch for item in plan}
+        distinct_rates = {item.rate for item in plan}
+        if len(distinct_pitches) == 1 and len(distinct_rates) == 1:
+            # Single-pass: preserves natural cross-sentence neural attention and breath flow
+            full_text = " ".join(item.text for item in plan)
+            return self.synthesize_to_bytes(
+                full_text,
+                voice=selected_voice,
+                rate=plan[0].rate,
+                pitch=plan[0].pitch,
+            )
+
+        # Diverse prosody profile: synthesize in parallel using asyncio.gather for low latency
+        import edge_tts
+
+        async def _synth_chunk(item):
+            communicate = edge_tts.Communicate(
+                text=item.text,
+                voice=selected_voice,
                 rate=item.rate,
                 pitch=item.pitch,
             )
-            if chunk_bytes:
-                combined_audio.extend(chunk_bytes)
+            data = bytearray()
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    data.extend(chunk["data"])
+            return bytes(data)
 
-        return bytes(combined_audio)
+        async def _synth_all():
+            return await asyncio.gather(*(_synth_chunk(item) for item in plan))
+
+        try:
+            chunks = asyncio.run(_synth_all())
+            combined_audio = bytearray()
+            for chunk in chunks:
+                if chunk:
+                    combined_audio.extend(chunk)
+            return bytes(combined_audio)
+        except Exception as e:
+            logger.error(f"Parallel EdgeTTS synthesis error: {e}")
+            # Fallback to sequential synthesis
+            combined_audio = bytearray()
+            for item in plan:
+                if self._stop_event.is_set():
+                    break
+                chunk_bytes = self.synthesize_to_bytes(
+                    item.text,
+                    voice=selected_voice,
+                    rate=item.rate,
+                    pitch=item.pitch,
+                )
+                if chunk_bytes:
+                    combined_audio.extend(chunk_bytes)
+            return bytes(combined_audio)
 
     def stop(self) -> None:
         super().stop()

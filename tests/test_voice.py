@@ -196,23 +196,43 @@ def test_voice_manager_barge_in_interruption():
 
 
 def test_conversational_prosody_and_normalization():
-    from app.voice.prosody import normalize_hinglish_speech_text, prepare_prosody_plan, classify_sentence
+    from app.voice.prosody import (
+        normalize_hinglish_speech_text,
+        prepare_prosody_plan,
+        classify_sentence,
+        number_to_hindi_words,
+    )
+    from app.voice.tts_engine import clean_text_for_tts
 
-    # 1. Normalization of abbreviations, symbols, percentages
+    # 1. Hindi numbers conversion
+    assert number_to_hindi_words(0) == "zero"
+    assert number_to_hindi_words(5) == "paanch"
+    assert number_to_hindi_words(86) == "chhiyaasi"
+    assert number_to_hindi_words(90) == "nabbe"
+    assert number_to_hindi_words(416) == "chaar sau solah"
+    assert number_to_hindi_words(569) == "paanch sau unhattar"
+    assert number_to_hindi_words(1080) == "ek hazaar assi"
+
+    # 2. Normalization of abbreviations, symbols, percentages, and unit numbers
     raw = "Hello Sir! 🌸 RAM 90% ho gayi hai (416 MB free). PC restart karun?"
     cleaned = normalize_hinglish_speech_text(raw)
     assert "🌸" not in cleaned
     assert "nabbe percent" in cleaned
     assert "M B" in cleaned
     assert "P C" in cleaned
+    assert "chaar sau solah M B" in cleaned
 
-    # 2. Classification of sentence types
+    # 3. clean_text_for_tts delegates to prosody normalizer and preserves question marks
+    cleaned_tts = clean_text_for_tts("Aap kaise hain?")
+    assert "?" in cleaned_tts
+
+    # 4. Classification of sentence types
     assert classify_sentence("Hello Sir!") == "greeting"
     assert classify_sentence("Khana khaya aapne?") == "question"
     assert classify_sentence("Thoda aaram kar lijiye.") == "empathy"
     assert classify_sentence("Maine gaana chala diya.") == "confirmation"
 
-    # 3. Dynamic prosody plan
+    # 5. Dynamic prosody plan
     plan = prepare_prosody_plan("Hello Sir. Kaise hain aap? Maine gaana chala diya.")
     assert len(plan) == 3
     assert plan[0].sentence_type == "greeting"

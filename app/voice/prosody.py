@@ -37,13 +37,53 @@ CONFIRMATION_PATTERNS = [
     r"\b(kar diya|chala diya|open kar diya|ho gaya|done|playing|opened|launching|switched)\b",
 ]
 
-# Hinglish number mappings for common numbers & percentages
+# Complete Hinglish number mappings for natural spoken delivery (0-99)
 HINDI_NUMBERS = {
     0: "zero", 1: "ek", 2: "do", 3: "teen", 4: "chaar", 5: "paanch",
     6: "chhe", 7: "saat", 8: "aath", 9: "nau", 10: "das",
-    20: "bees", 30: "tees", 40: "chaalis", 50: "pachaas",
-    60: "saath", 70: "sattar", 80: "assi", 90: "nabbe", 100: "sau",
+    11: "gyarah", 12: "barah", 13: "terah", 14: "chaudah", 15: "pandrah",
+    16: "solah", 17: "satrah", 18: "athaarah", 19: "unnis",
+    20: "bees", 21: "ikkis", 22: "baais", 23: "teis", 24: "chaubees",
+    25: "pachchis", 26: "chhabbees", 27: "sattaais", 28: "atthaais", 29: "untees",
+    30: "tees", 31: "ikattees", 32: "battees", 33: "teintees", 34: "chautees",
+    35: "paintees", 36: "chhattees", 37: "saintees", 38: "adhtees", 39: "unchaalis",
+    40: "chaalis", 41: "iktaalis", 42: "bayaalis", 43: "teintaalis", 44: "chawalis",
+    45: "paintaalis", 46: "chhiyaalis", 47: "saintaalis", 48: "adhtaalis", 49: "unchaas",
+    50: "pachaas", 51: "ikyaawan", 52: "baawan", 53: "tirepan", 54: "chawwan",
+    55: "pachpan", 56: "chhappan", 57: "sattaawan", 58: "atthaawan", 59: "unsath",
+    60: "saath", 61: "iksath", 62: "baasath", 63: "tirsath", 64: "chaunsath",
+    65: "painsath", 66: "chhiyaasath", 67: "sadsath", 68: "adhsath", 69: "unhattar",
+    70: "sattar", 71: "ikhattar", 72: "bahattar", 73: "tihattar", 74: "chauhattar",
+    75: "pachhattar", 76: "chhihattar", 77: "sathattar", 78: "athahattar", 79: "unasi",
+    80: "assi", 81: "ikyaasi", 82: "bayaasi", 83: "tiraasi", 84: "chauraasi",
+    85: "pachaasi", 86: "chhiyaasi", 87: "sattaasi", 88: "atthaasi", 89: "nawaasi",
+    90: "nabbe", 91: "ikyaanwe", 92: "baanwe", 93: "tiraanwe", 94: "chauraanwe",
+    95: "pachaanwe", 96: "chhiyaanwe", 97: "sattaanwe", 98: "atthaanwe", 99: "ninyaanwe",
+    100: "sau",
 }
+
+
+def number_to_hindi_words(n: int) -> str:
+    """Converts integers (0-99999) to natural spoken Hindi words."""
+    if n in HINDI_NUMBERS:
+        return HINDI_NUMBERS[n]
+    if n < 1000:
+        hundreds = n // 100
+        remainder = n % 100
+        h_str = f"{HINDI_NUMBERS.get(hundreds, str(hundreds))} sau"
+        if remainder > 0:
+            return f"{h_str} {HINDI_NUMBERS.get(remainder, str(remainder))}"
+        return h_str
+    if n < 100000:
+        thousands = n // 1000
+        remainder = n % 1000
+        t_str = f"{HINDI_NUMBERS.get(thousands, str(thousands))} hazaar"
+        if remainder > 0:
+            if remainder >= 100:
+                return f"{t_str} {number_to_hindi_words(remainder)}"
+            return f"{t_str} {HINDI_NUMBERS.get(remainder, str(remainder))}"
+        return t_str
+    return str(n)
 
 
 def normalize_hinglish_speech_text(text: str) -> str:
@@ -71,39 +111,60 @@ def normalize_hinglish_speech_text(text: str) -> str:
     t = re.sub(r"[\u2600-\u27bf\u2300-\u23ff]", "", t)
 
     # 5. Expand technical abbreviations for natural phonetic articulation
-    t = re.sub(r"\bPC\b", "P-C", t)
-    t = re.sub(r"\bCPU\b", "C-P-U", t)
+    t = re.sub(r"\bPC\b", "P C", t)
+    t = re.sub(r"\bCPU\b", "C P U", t)
+    t = re.sub(r"\bGPU\b", "G P U", t)
     t = re.sub(r"\bRAM\b", "Ram", t)
-    t = re.sub(r"\bMB\b", "M-B", t)
-    t = re.sub(r"\bGB\b", "G-B", t)
-    t = re.sub(r"\bTB\b", "T-B", t)
-    t = re.sub(r"\bUI\b", "U-I", t)
-    t = re.sub(r"\bOS\b", "O-S", t)
+    t = re.sub(r"\bROM\b", "Rom", t)
+    t = re.sub(r"\bSSD\b", "S S D", t)
+    t = re.sub(r"\bHDD\b", "H D D", t)
+    t = re.sub(r"\bUSB\b", "U S B", t)
+    t = re.sub(r"\bMB\b", "M B", t)
+    t = re.sub(r"\bGB\b", "G B", t)
+    t = re.sub(r"\bTB\b", "T B", t)
+    t = re.sub(r"\bKB\b", "K B", t)
+    t = re.sub(r"\bGHz\b", "G H z", t)
+    t = re.sub(r"\bMHz\b", "M H z", t)
+    t = re.sub(r"\bFPS\b", "F P S", t)
+    t = re.sub(r"\bUI\b", "U I", t)
+    t = re.sub(r"\bOS\b", "O S", t)
+    t = re.sub(r"\bAPI\b", "A P I", t)
+    t = re.sub(r"\bURL\b", "U R L", t)
+    t = re.sub(r"\bAI\b", "A I", t)
     t = re.sub(r"\bmin\b", "minute", t)
     t = re.sub(r"\bsec\b", "second", t)
     t = re.sub(r"\bhr\b", "ghante", t)
 
-    # 6. Normalize common percentages in speech
+    # 6. Normalize percentages in speech (e.g. 86% -> chhiyaasi percent)
     def _pct_replace(match):
         num_str = match.group(1)
         try:
             val = int(num_str)
-            if val in HINDI_NUMBERS:
-                return f"{HINDI_NUMBERS[val]} percent"
+            return f"{number_to_hindi_words(val)} percent"
         except Exception:
-            pass
-        return f"{num_str} percent"
+            return f"{num_str} percent"
 
     t = re.sub(r"(\d+)%", _pct_replace, t)
 
-    # 7. Smooth punctuation: convert dashes/colons into natural conversational pauses
-    t = re.sub(r"[-–—]", " ", t)
+    # 7. Convert numbers before computer units to natural Hindi words (e.g. 569 MB -> paanch sau unhattar M B)
+    def _unit_num_replace(match):
+        num_val = int(match.group(1))
+        unit_str = match.group(2)
+        return f"{number_to_hindi_words(num_val)} {unit_str}"
+
+    t = re.sub(r"\b(\d+)\s*(M B|G B|T B|K B|percent|minute|second|ghante)\b", _unit_num_replace, t)
+
+    # 8. Smooth punctuation: convert dashes/colons into natural conversational pauses
+    t = re.sub(r"[-–—]", ", ", t)
     t = re.sub(r"[:;]", ", ", t)
-    t = re.sub(r"\.{2,}", ". ", t)
+    t = re.sub(r"[()\[\]{}]", ", ", t)
+    t = re.sub(r"\.{3,}", "... ", t)
+    t = re.sub(r"\.{2}", ". ", t)
     t = re.sub(r"[!]+", ".", t)
 
-    # 8. Clean extra whitespace
+    # 9. Clean extra whitespace and punctuation clusters
     t = re.sub(r"\s*,\s*", ", ", t)
+    t = re.sub(r",(\s*,)+", ", ", t)
     t = re.sub(r"\s*\.\s*", ". ", t)
     t = re.sub(r"\s*\?\s*", "? ", t)
     t = re.sub(r"\s+", " ", t).strip()
